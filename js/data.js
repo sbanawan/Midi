@@ -64,6 +64,38 @@ const PEDALS = [
       { section: 'Primary', name: 'Amount (Movement)', cc: 67, type: 'knob' },
       { section: 'Primary', name: 'Amount (Diffusion)', cc: 69, type: 'knob' },
       { section: 'Primary', name: 'Amount (Texture)', cc: 71, type: 'knob' },
+      {
+        section: 'Module effect select', name: 'Character module', cc: 16, type: 'select',
+        options: [
+          { label: 'Drive', min: 0, max: 21 }, { label: 'Sweeten', min: 22, max: 43 },
+          { label: 'Fuzz', min: 44, max: 65 }, { label: 'Howl', min: 66, max: 87 },
+          { label: 'Swell', min: 88, max: 109 }, { label: 'Off', min: 110, max: 127 },
+        ],
+      },
+      {
+        section: 'Module effect select', name: 'Movement module', cc: 17, type: 'select',
+        options: [
+          { label: 'Doubler', min: 0, max: 21 }, { label: 'Vibrato', min: 22, max: 43 },
+          { label: 'Phaser', min: 44, max: 65 }, { label: 'Tremolo', min: 66, max: 87 },
+          { label: 'Pitch', min: 88, max: 109 }, { label: 'Off', min: 110, max: 127 },
+        ],
+      },
+      {
+        section: 'Module effect select', name: 'Diffusion module', cc: 18, type: 'select',
+        options: [
+          { label: 'Cascade', min: 0, max: 21 }, { label: 'Reels', min: 22, max: 43 },
+          { label: 'Space', min: 44, max: 65 }, { label: 'Collage', min: 66, max: 87 },
+          { label: 'Reverse', min: 88, max: 109 }, { label: 'Off', min: 110, max: 127 },
+        ],
+      },
+      {
+        section: 'Module effect select', name: 'Texture module', cc: 19, type: 'select',
+        options: [
+          { label: 'Filter', min: 0, max: 21 }, { label: 'Squash', min: 22, max: 43 },
+          { label: 'Cassette', min: 44, max: 65 }, { label: 'Broken', min: 66, max: 87 },
+          { label: 'Interference', min: 88, max: 109 }, { label: 'Off', min: 110, max: 127 },
+        ],
+      },
       { section: 'Secondary', name: 'Sensitivity', cc: 72, type: 'knob' },
       { section: 'Secondary', name: 'Drift (Movement)', cc: 74, type: 'knob' },
       { section: 'Secondary', name: 'Drift (Diffusion)', cc: 76, type: 'knob' },
@@ -133,7 +165,7 @@ const PEDALS = [
     extras: {
       presets: 'Up to 80 user presets (4 banks × 20). Saved/recalled on the pedal via the Copy/Save and Preset Browser menus.',
       globalSettings: 'Global Settings (press A+B+C+D): TILT knob = MIDI channel (1–16) · RATE knob = MIDI routing (Interface / Interface w/o internal clock / Thru / Thru w/o internal clock) · TIME knob = MIDI clock source (Auto / USB MIDI / DIN MIDI / Internal) · AMOUNT (Diffusion) = bypass mode.',
-      modules: 'Four rearrangeable effect modules: Character, Movement, Diffusion, Texture. Effects within a module are selected with the front-panel buttons (not via MIDI).',
+      modules: 'Four rearrangeable effect modules — Character, Movement, Diffusion, Texture — each with 5 effect types. The active effect in each module is MIDI-selectable (CC 16/17/18/19, see "Module effect select"), or chosen with the front-panel buttons. Note: the Chroma cannot recall presets over MIDI (no Program Change support).',
     },
   },
 
