@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1115">
+  <title>MIDI Pedal Control</title>
+  <meta name="description" content="Reference app for controlling Chroma Console, CBA Habit, Reverse Mode C and Tonal Recall from a Quad Cortex over MIDI.">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="title">
+        <h1>MIDI Pedal Control</h1>
+        <span class="sub">Quad Cortex → your pedalboard</span>
+      </div>
+      <nav class="tabs">
+        <button data-tab="pedals" onclick="location.hash='#pedals'">Pedals</button>
+        <button data-tab="qc" onclick="location.hash='#qc'">Quad Cortex</button>
+        <button data-tab="clock" onclick="location.hash='#clock'">Clock sync</button>
+        <button data-tab="sources" onclick="location.hash='#sources'">Sources</button>
+      </nav>
+    </div>
+  </header>
+  <main id="app"><!-- views render here --></main>
+
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
