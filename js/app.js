@@ -684,30 +684,9 @@ function renderRecipeView(id) {
     return wrap;
   }
 
-  involved.forEach(p => {
-    const card = el('div', { class: 'card' });
-    card.style.borderLeft = `4px solid ${p.accent}`;
-    const h = el('h3', {}, [p.name]);
-    h.appendChild(el('span', { class: 'control-cc', html: ` &nbsp;Ch <b>${channels[p.id]}</b>` }));
-    card.appendChild(h);
-    const tw = el('div', { class: 'table-wrap' });
-    const t = el('table');
-    t.appendChild(el('thead', {}, el('tr', {}, [
-      el('th', { text: 'Control' }), el('th', { text: 'Setting' }), el('th', { text: 'Send from QC' }),
-    ])));
-    const tb = el('tbody');
-    settingControls(p).forEach(c => {
-      if (!Object.prototype.hasOwnProperty.call(r.entries[p.id], c.cc)) return;
-      const v = r.entries[p.id][c.cc];
-      tb.appendChild(el('tr', {}, [
-        el('td', { text: c.name }),
-        el('td', { text: labelForValue(c, v) }),
-        el('td', { class: 'mono', html: `Ch ${channels[p.id]} · CC ${c.cc} = <b>${v}</b>` }),
-      ]));
-    });
-    t.appendChild(tb); tw.appendChild(t); card.appendChild(tw);
-    wrap.appendChild(card);
-  });
+  wrap.appendChild(el('p', { class: 'note', html:
+    'Program this recipe into one Quad Cortex preset’s <b>Preset MIDI Out</b> list (enter the rows below in Cortex Control or on the QC).' }));
+  wrap.appendChild(buildPresetMidiOut(r.entries, { showCopy: true }).card);
   return wrap;
 }
 
@@ -722,22 +701,81 @@ function loadSheet() {
 }
 function saveSheet(s) { try { localStorage.setItem(SHEET_KEY, JSON.stringify(s)); } catch (e) { /* ignore */ } }
 
-function cheatSheetText(sheet) {
-  const lines = ['MIDI cheat sheet — send these from the Quad Cortex', ''];
-  let any = false;
+const QC_MSG_LIMIT = 12; // QC: up to 12 MIDI messages per preset (Preset MIDI Out)
+
+// Flatten {pedalId:{cc:val}} into ordered QC Preset MIDI Out rows.
+function flattenSelections(entries) {
+  const rows = [];
   PEDALS.forEach(p => {
-    const e = sheet.entries[p.id];
-    if (!e || !Object.keys(e).length) return;
-    any = true;
-    lines.push(`${p.name} — MIDI channel ${channels[p.id]}`);
-    settingControls(p).forEach(c => {
-      if (!Object.prototype.hasOwnProperty.call(e, c.cc)) return;
-      const v = e[c.cc];
-      lines.push(`  CC ${String(c.cc).padEnd(3)} = ${String(v).padEnd(3)}  ${c.name}: ${labelForValue(c, v)}`);
+    const e = entries[p.id];
+    if (!e) return;
+    const byCc = {};
+    settingControls(p).forEach(c => { byCc[c.cc] = c; });
+    Object.keys(e).map(Number).sort((a, b) => a - b).forEach(cc => {
+      rows.push({ pedal: p, channel: channels[p.id], cc, value: e[cc], ctrl: byCc[cc] });
     });
-    lines.push('');
   });
-  return any ? lines.join('\n') : 'No selections yet.';
+  return rows;
+}
+
+function cheatSheetText(sheet) {
+  const rows = flattenSelections(sheet.entries);
+  if (!rows.length) return 'No selections yet.';
+  const lines = ['Quad Cortex — Preset MIDI Out', ''];
+  rows.forEach((r, i) => {
+    lines.push(`${String(i + 1).padStart(2)}. TYPE CC  CH ${String(r.channel).padEnd(2)}  CC# ${String(r.cc).padEnd(3)}  VALUE ${String(r.value).padEnd(3)}  (${r.pedal.name}: ${r.ctrl ? r.ctrl.name : ''})`);
+  });
+  if (rows.length > QC_MSG_LIMIT) lines.push('', `NOTE: ${rows.length} messages — the QC allows only ${QC_MSG_LIMIT} per preset. Trim or split across presets.`);
+  return lines.join('\n');
+}
+
+// Builds the QC "Preset MIDI Out" programming table from {pedalId:{cc:val}}.
+function buildPresetMidiOut(entries, opts) {
+  opts = opts || {};
+  const rows = flattenSelections(entries);
+  const card = el('div', { class: 'card' });
+  const h = el('h3', {}, ['Quad Cortex — Preset MIDI Out']);
+  h.appendChild(el('span', { class: 'msg-count ' + (rows.length > QC_MSG_LIMIT ? 'count-bad' : 'count-ok'),
+    text: ` ${rows.length}/${QC_MSG_LIMIT} messages` }));
+  card.appendChild(h);
+  card.appendChild(el('div', { class: 'note', html:
+    'Enter these into the preset’s <b>Preset MIDI Out</b> list — on the QC, or faster in Cortex Control on your computer. One row = one message.' }));
+  if (rows.length > QC_MSG_LIMIT) card.appendChild(el('div', { class: 'note warn',
+    text: `Over the QC’s limit of ${QC_MSG_LIMIT} messages per preset. Trim to ${QC_MSG_LIMIT}, or split across multiple presets/scenes (rows beyond ${QC_MSG_LIMIT} are highlighted).` }));
+
+  const tw = el('div', { class: 'table-wrap' });
+  const t = el('table');
+  t.appendChild(el('thead', {}, el('tr', {}, [
+    el('th', { text: '#' }), el('th', { text: 'Type' }), el('th', { text: 'Channel' }),
+    el('th', { text: 'CC#' }), el('th', { text: 'Value' }), el('th', { text: 'Sets' }),
+  ])));
+  const tb = el('tbody');
+  rows.forEach((r, i) => {
+    const sw = el('span', { class: 'swatch' }); sw.style.background = r.pedal.accent;
+    tb.appendChild(el('tr', { class: i >= QC_MSG_LIMIT ? 'over-limit' : '' }, [
+      el('td', { class: 'ch-num', text: String(i + 1) }),
+      el('td', { text: 'CC' }),
+      el('td', { class: 'ch-num', text: String(r.channel) }),
+      el('td', { class: 'ch-num', text: String(r.cc) }),
+      el('td', { class: 'ch-num', text: String(r.value) }),
+      el('td', {}, [sw, document.createTextNode(`${r.pedal.name}: ${r.ctrl ? r.ctrl.name : ('CC' + r.cc)} → ${r.ctrl ? labelForValue(r.ctrl, r.value) : r.value}`)]),
+    ]));
+  });
+  t.appendChild(tb); tw.appendChild(t); card.appendChild(tw);
+
+  if (opts.showCopy) {
+    const bar = el('div', { class: 'action-row tight' });
+    const copyBtn = el('button', { class: 'ghost-btn', text: 'Copy list' });
+    copyBtn.addEventListener('click', () => {
+      const txt = cheatSheetText({ entries });
+      const done = () => { copyBtn.textContent = 'Copied ✓'; setTimeout(() => { copyBtn.textContent = 'Copy list'; }, 1500); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => fallbackCopy(txt, done));
+      else fallbackCopy(txt, done);
+    });
+    bar.appendChild(copyBtn);
+    card.appendChild(bar);
+  }
+  return { card, count: rows.length };
 }
 
 function buildCheatSummary(sheet, refresh) {
@@ -775,30 +813,7 @@ function buildCheatSummary(sheet, refresh) {
   if (MIDI.access && MIDI.output && MIDI.live)
     host.appendChild(el('div', { class: 'note', html: `Live send is on → <b>${MIDI.output.name}</b>. Changes are sent as you make them.` }));
 
-  involved.forEach(p => {
-    const card = el('div', { class: 'card' });
-    card.style.borderLeft = `4px solid ${p.accent}`;
-    const h = el('h3', {}, [p.name]);
-    h.appendChild(el('span', { class: 'control-cc', html: ` &nbsp;Ch <b>${channels[p.id]}</b>` }));
-    card.appendChild(h);
-    const tw = el('div', { class: 'table-wrap' });
-    const t = el('table');
-    t.appendChild(el('thead', {}, el('tr', {}, [
-      el('th', { text: 'Control' }), el('th', { text: 'Setting' }), el('th', { text: 'Send from QC' }),
-    ])));
-    const tb = el('tbody');
-    settingControls(p).forEach(c => {
-      if (!Object.prototype.hasOwnProperty.call(sheet.entries[p.id], c.cc)) return;
-      const v = sheet.entries[p.id][c.cc];
-      tb.appendChild(el('tr', {}, [
-        el('td', { text: c.name }),
-        el('td', { text: labelForValue(c, v) }),
-        el('td', { class: 'mono', html: `Ch ${channels[p.id]} · CC ${c.cc} = <b>${v}</b>` }),
-      ]));
-    });
-    t.appendChild(tb); tw.appendChild(t); card.appendChild(tw);
-    host.appendChild(card);
-  });
+  host.appendChild(buildPresetMidiOut(sheet.entries, { showCopy: false }).card);
   return host;
 }
 

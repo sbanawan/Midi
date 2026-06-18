@@ -165,6 +165,11 @@ p.lead { color: var(--text-dim); margin: 0 0 18px; max-width: 70ch; }
 .primary-btn.disabled { opacity: 0.45; pointer-events: none; }
 .warn { color: var(--warn); }
 
+.msg-count { font-size: 0.74rem; font-weight: 600; margin-left: 8px; }
+.count-ok { color: #7fd18b; }
+.count-bad { color: var(--warn); }
+tr.over-limit td { color: var(--warn); opacity: 0.85; }
+
 .knob-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
 .knob-row input[type=range] { flex: 1; accent-color: var(--accent); }
 .knob-readout {

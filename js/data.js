@@ -376,7 +376,8 @@ const QC = {
     { name: 'MIDI Clock Out', detail: 'Toggle clock output over USB and/or TRS MIDI. This is what syncs your delays/mod to the QC tempo.' },
   ],
   presetMidiOut:
-    'To control the pedals, add MIDI Out messages to a QC preset (or footswitch). Each message specifies a MIDI channel + a CC number + value, or a Program Change. Set the channel to match the target pedal (see the channel map), and the CC/value from that pedal’s control list.',
+    'Each preset has a Preset MIDI Out list of up to 12 messages (Type CC/PC, Channel 1–16, CC#, Value) sent over MIDI DIN + USB when the preset loads. That’s how you control the pedals: build the list per preset. You can enter it on the QC, or faster in Cortex Control on a computer (keyboard/mouse). There is no way to auto-import the list — but the Cheat sheet / a Recipe gives you the exact rows to type. Note the 12-message-per-preset limit; for more, use scene/footswitch MIDI or split across presets.',
+  presetMidiOutLimit: 12,
   sources: ['qc-manual'],
 };
 

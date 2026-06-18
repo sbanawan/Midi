@@ -32,10 +32,12 @@ Or just open `index.html` in a browser. Hostable as-is on GitHub Pages.
   `Ch N · CC X` plus an interactive slider / option picker so you can read off
   the value to send. Each pedal's MIDI channel is configurable (saved in your
   browser) with duplicate-channel warnings.
-- **Cheat sheet** — one live reference page: tick controls across any of the
-  pedals and it compiles every `Ch · CC = value` to send from the QC, with a
-  Copy‑all button. Selections persist on the device.
-- **Recipes** — save your favourite settings for "various effects". A recipe
+- **Cheat sheet** — one live reference page. Tick controls (or adjust them on
+  the Pedals tab) and it compiles a **Quad Cortex Preset MIDI Out** table —
+  `# · Type · Channel · CC# · Value` — exactly as you'd enter it on the QC or in
+  Cortex Control, with a **12‑messages‑per‑preset** counter/warning and copy.
+- **Recipes** — save your favourite settings for "various effects" (one recipe =
+  one QC preset). The view shows that preset's Preset MIDI Out programming list. A recipe
   captures knob/switch values across any of the pedals (plus an optional tempo
   and notes); the read-only view lists exactly what to dial in per pedal and the
   `Ch N · CC X = value` to send from the QC. Stored in your browser
