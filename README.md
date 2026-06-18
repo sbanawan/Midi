@@ -32,6 +32,9 @@ Or just open `index.html` in a browser. Hostable as-is on GitHub Pages.
   `Ch N · CC X` plus an interactive slider / option picker so you can read off
   the value to send. Each pedal's MIDI channel is configurable (saved in your
   browser) with duplicate-channel warnings.
+- **Cheat sheet** — one live reference page: tick controls across any of the
+  pedals and it compiles every `Ch · CC = value` to send from the QC, with a
+  Copy‑all button. Selections persist on the device.
 - **Recipes** — save your favourite settings for "various effects". A recipe
   captures knob/switch values across any of the pedals (plus an optional tempo
   and notes); the read-only view lists exactly what to dial in per pedal and the

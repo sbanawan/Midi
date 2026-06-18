@@ -53,6 +53,7 @@ function setActiveTab(name) {
 
 const ROUTES = {
   pedals: renderPedals,
+  cheatsheet: renderCheatsheet,
   recipes: renderRecipes,
   qc: renderQC,
   clock: renderClock,
@@ -474,7 +475,7 @@ function renderRecipeEditor(id) {
   return wrap;
 }
 
-function recipePedalEditor(p, draft) {
+function recipePedalEditor(p, draft, onChange) {
   const entry = draft.entries[p.id] || (draft.entries[p.id] = {});
   const card = el('div', { class: 'card' });
   const h = el('h3', {}, [p.name]);
@@ -501,11 +502,12 @@ function recipePedalEditor(p, draft) {
 
     const buildEditor = () => {
       editorHost.innerHTML = '';
-      editorHost.appendChild(recipeValueEditor(c, entry[c.cc], v => { entry[c.cc] = v; }));
+      editorHost.appendChild(recipeValueEditor(c, entry[c.cc], v => { entry[c.cc] = v; if (onChange) onChange(); }));
     };
     cb.addEventListener('change', () => {
       if (cb.checked) { entry[c.cc] = defaultValueFor(c); row.classList.remove('off'); buildEditor(); }
       else { delete entry[c.cc]; row.classList.add('off'); editorHost.innerHTML = ''; }
+      if (onChange) onChange();
     });
     if (included) buildEditor();
     card.appendChild(row);
@@ -608,6 +610,122 @@ function renderRecipeView(id) {
     t.appendChild(tb); tw.appendChild(t); card.appendChild(tw);
     wrap.appendChild(card);
   });
+  return wrap;
+}
+
+/* ========================================================== CHEAT SHEET == */
+/* One live reference page. Pick controls across all pedals and it compiles
+ * every "Ch · CC = value" to send from the Quad Cortex. Persisted per device. */
+
+const SHEET_KEY = 'cheatsheet.v1';
+function loadSheet() {
+  try { const v = JSON.parse(localStorage.getItem(SHEET_KEY)); return v && v.entries ? v : { entries: {} }; }
+  catch (e) { return { entries: {} }; }
+}
+function saveSheet(s) { try { localStorage.setItem(SHEET_KEY, JSON.stringify(s)); } catch (e) { /* ignore */ } }
+
+function cheatSheetText(sheet) {
+  const lines = ['MIDI cheat sheet — send these from the Quad Cortex', ''];
+  let any = false;
+  PEDALS.forEach(p => {
+    const e = sheet.entries[p.id];
+    if (!e || !Object.keys(e).length) return;
+    any = true;
+    lines.push(`${p.name} — MIDI channel ${channels[p.id]}`);
+    settingControls(p).forEach(c => {
+      if (!Object.prototype.hasOwnProperty.call(e, c.cc)) return;
+      const v = e[c.cc];
+      lines.push(`  CC ${String(c.cc).padEnd(3)} = ${String(v).padEnd(3)}  ${c.name}: ${labelForValue(c, v)}`);
+    });
+    lines.push('');
+  });
+  return any ? lines.join('\n') : 'No selections yet.';
+}
+
+function buildCheatSummary(sheet, refresh) {
+  const host = el('div');
+  const involved = PEDALS.filter(p => sheet.entries[p.id] && Object.keys(sheet.entries[p.id]).length);
+  const count = involved.reduce((n, p) => n + Object.keys(sheet.entries[p.id]).length, 0);
+
+  if (!involved.length) {
+    host.appendChild(el('div', { class: 'card', html:
+      '<p style="margin:0;color:var(--text-dim)">No selections yet. Pick controls below — your CC reference builds here automatically.</p>' }));
+    return host;
+  }
+
+  const bar = el('div', { class: 'action-row tight' });
+  const copyBtn = el('button', { class: 'primary-btn', text: `Copy all (${count})` });
+  copyBtn.addEventListener('click', () => {
+    const txt = cheatSheetText(sheet);
+    const done = () => { copyBtn.textContent = 'Copied ✓'; setTimeout(() => { copyBtn.textContent = `Copy all (${count})`; }, 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => fallbackCopy(txt, done));
+    else fallbackCopy(txt, done);
+  });
+  bar.appendChild(copyBtn);
+  bar.appendChild(el('button', { class: 'danger-btn', text: 'Clear all',
+    onclick: () => { if (confirm('Clear all cheat-sheet selections?')) { sheet.entries = {}; saveSheet(sheet); if (refresh) refresh(true); } } }));
+  host.appendChild(bar);
+
+  involved.forEach(p => {
+    const card = el('div', { class: 'card' });
+    card.style.borderLeft = `4px solid ${p.accent}`;
+    const h = el('h3', {}, [p.name]);
+    h.appendChild(el('span', { class: 'control-cc', html: ` &nbsp;Ch <b>${channels[p.id]}</b>` }));
+    card.appendChild(h);
+    const tw = el('div', { class: 'table-wrap' });
+    const t = el('table');
+    t.appendChild(el('thead', {}, el('tr', {}, [
+      el('th', { text: 'Control' }), el('th', { text: 'Setting' }), el('th', { text: 'Send from QC' }),
+    ])));
+    const tb = el('tbody');
+    settingControls(p).forEach(c => {
+      if (!Object.prototype.hasOwnProperty.call(sheet.entries[p.id], c.cc)) return;
+      const v = sheet.entries[p.id][c.cc];
+      tb.appendChild(el('tr', {}, [
+        el('td', { text: c.name }),
+        el('td', { text: labelForValue(c, v) }),
+        el('td', { class: 'mono', html: `Ch ${channels[p.id]} · CC ${c.cc} = <b>${v}</b>` }),
+      ]));
+    });
+    t.appendChild(tb); tw.appendChild(t); card.appendChild(tw);
+    host.appendChild(card);
+  });
+  return host;
+}
+
+function fallbackCopy(text, done) {
+  const ta = el('textarea'); ta.value = text;
+  ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); if (done) done(); } catch (e) { /* ignore */ }
+  document.body.removeChild(ta);
+}
+
+function renderCheatsheet() {
+  const sheet = loadSheet();
+  const wrap = el('section', { class: 'view active' });
+  wrap.appendChild(el('h2', { class: 'section-title', text: 'CC cheat sheet' }));
+  wrap.appendChild(el('p', { class: 'lead',
+    text: 'Your live reference. Pick controls below and this page compiles every Ch · CC = value to enter on the Quad Cortex. Selections are saved on this device; channels follow each pedal’s setting.' }));
+
+  const summaryHost = el('div', { id: 'cheat-summary' });
+  const editorHost = el('div', { id: 'cheat-editor' });
+  const refresh = (rebuildEditor) => {
+    saveSheet(sheet);
+    summaryHost.innerHTML = '';
+    summaryHost.appendChild(buildCheatSummary(sheet, refresh));
+    if (rebuildEditor) {
+      editorHost.innerHTML = '';
+      PEDALS.forEach(p => editorHost.appendChild(recipePedalEditor(p, sheet, refresh)));
+    }
+  };
+
+  summaryHost.appendChild(buildCheatSummary(sheet, refresh));
+  wrap.appendChild(summaryHost);
+
+  wrap.appendChild(el('h2', { class: 'section-title', text: 'Make your selections', style: 'margin-top:26px' }));
+  PEDALS.forEach(p => editorHost.appendChild(recipePedalEditor(p, sheet, refresh)));
+  wrap.appendChild(editorHost);
   return wrap;
 }
 
