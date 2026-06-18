@@ -152,6 +152,14 @@ p.lead { color: var(--text-dim); margin: 0 0 18px; max-width: 70ch; }
 .control-cc b { color: var(--accent); font-weight: 600; }
 .control-usage { font-size: 0.78rem; color: var(--text-dim); margin-top: 4px; }
 
+.control.in-sheet { border-left: 3px solid var(--accent); }
+.control-status { margin-top: 9px; display: flex; align-items: center; gap: 12px; min-height: 0; }
+.control-status:empty { display: none; }
+.in-sheet-tag { font-size: 0.7rem; color: var(--accent); letter-spacing: 0.3px; }
+.clear-link { background: none; border: none; color: var(--text-dim); font-size: 0.72rem; text-decoration: underline; cursor: pointer; padding: 0; }
+.clear-link:hover { color: var(--text); }
+.chip.sheet { color: var(--accent); border-color: rgba(74,144,217,0.4); }
+
 .knob-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
 .knob-row input[type=range] { flex: 1; accent-color: var(--accent); }
 .knob-readout {

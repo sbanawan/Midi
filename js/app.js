@@ -24,6 +24,20 @@ function channelConflicts() {
   return dupes;
 }
 
+/* -------------------------------------------------- shared selections ----
+ * Single source of truth shared by the Pedals tab and the Cheat sheet.
+ * Backed by the same localStorage the cheat sheet uses. Adjusting a control
+ * anywhere writes here; the cheat sheet reads here. */
+let selections; // initialised at boot (after loadSheet is available)
+function saveSelections() { saveSheet(selections); }
+function selVal(pid, cc) { const e = selections.entries[pid]; return e ? e[cc] : undefined; }
+function selSet(pid, cc, v) { (selections.entries[pid] || (selections.entries[pid] = {}))[cc] = v; saveSelections(); }
+function selClear(pid, cc) {
+  const e = selections.entries[pid];
+  if (e) { delete e[cc]; if (!Object.keys(e).length) delete selections.entries[pid]; saveSelections(); }
+}
+function selCount(pid) { const e = selections.entries[pid]; return e ? Object.keys(e).length : 0; }
+
 /* ------------------------------------------------------------ helpers ---- */
 const el = (tag, props = {}, kids = []) => {
   const n = document.createElement(tag);
@@ -99,6 +113,8 @@ function renderPedals(arg) {
     meta.appendChild(el('span', { class: 'chip ch', text: `MIDI ch ${channels[p.id]}` }));
     if (p.clock && p.clock.supported) meta.appendChild(el('span', { class: 'chip clock', text: '◷ clock sync' }));
     meta.appendChild(el('span', { class: 'chip', text: `${p.controls.length} controls` }));
+    const n = selCount(p.id);
+    if (n) meta.appendChild(el('span', { class: 'chip sheet', text: `${n} on cheat sheet` }));
     card.appendChild(meta);
     grid.appendChild(card);
   });
@@ -140,6 +156,10 @@ function renderPedalDetail(id) {
   if (p.channelDefaultNote) chBox.appendChild(el('span', { class: 'note', text: p.channelDefaultNote }));
   wrap.appendChild(chBox);
 
+  // tip: changes here feed the cheat sheet
+  wrap.appendChild(el('div', { class: 'note', html:
+    'Adjust any control below and it’s added to your <b>Cheat sheet</b> automatically (use “remove” to drop it).' }));
+
   // connection + clock notes
   wrap.appendChild(el('div', { class: 'note', html: `<b>MIDI connection:</b> ${p.midiInput}` }));
   if (p.clock && p.clock.supported)
@@ -176,60 +196,79 @@ function ccTag(p, value) {
 }
 
 function renderControl(p, c) {
-  const row = el('div', { class: 'control' });
+  const stored = selVal(p.id, c.cc);
+  let included = stored !== undefined;
+  const dispVal = included ? stored : defaultValueFor(c);
+
+  const row = el('div', { class: 'control' + (included ? ' in-sheet' : '') });
   const top = el('div', { class: 'control-top' });
   const nameWrap = el('span', { class: 'control-name' }, [c.name]);
   if (c.verify) nameWrap.appendChild(el('span', { class: 'verify-badge', text: 'verify' }));
   top.appendChild(nameWrap);
-
-  // header CC label (channel + CC number)
   top.appendChild(el('span', { class: 'control-cc', html: `Ch ${channels[p.id]} · CC <b>${c.cc}</b>` }));
   row.appendChild(top);
-
   if (c.usage) row.appendChild(el('div', { class: 'control-usage', text: c.usage }));
+
+  // status line: shows whether this control is on the cheat sheet + a remove link
+  const status = el('div', { class: 'control-status' });
+  const renderStatus = () => {
+    status.innerHTML = '';
+    if (!included) return;
+    status.appendChild(el('span', { class: 'in-sheet-tag', text: '● on cheat sheet' }));
+    status.appendChild(el('button', { class: 'clear-link', text: 'remove', onclick: () => {
+      selClear(p.id, c.cc); included = false; row.classList.remove('in-sheet'); renderStatus();
+    } }));
+  };
+  const include = (v) => { selSet(p.id, c.cc, v); included = true; row.classList.add('in-sheet'); renderStatus(); };
 
   if (c.type === 'knob') {
     const knob = el('div', { class: 'knob-row' });
-    const input = el('input', { type: 'range', min: 0, max: 127, value: 64 });
+    const input = el('input', { type: 'range', min: 0, max: 127, value: dispVal });
     const readout = el('div', { class: 'knob-readout', html:
-      `<span class="ccval">64</span> <span class="pct">(${ccPct(64)}%)</span>` });
+      `<span class="ccval">${dispVal}</span> <span class="pct">(${ccPct(dispVal)}%)</span>` });
     input.addEventListener('input', () => {
       const v = parseInt(input.value, 10);
       readout.innerHTML = `<span class="ccval">${v}</span> <span class="pct">(${ccPct(v)}%)</span>`;
+      include(v);
     });
-    knob.appendChild(input);
-    knob.appendChild(readout);
+    knob.appendChild(input); knob.appendChild(readout);
     row.appendChild(knob);
   } else if (c.type === 'select' || c.type === 'toggle') {
     const optRow = el('div', { class: 'opt-row' });
-    c.options.forEach((o, i) => {
+    c.options.forEach(o => {
+      const active = included && dispVal >= o.min && dispVal <= o.max;
       const span = o.min === o.max ? `${o.min}` : `${o.min}–${o.max}`;
-      const btn = el('div', { class: 'opt' + (i === 0 ? ' active' : ''), html:
+      const btn = el('div', { class: 'opt' + (active ? ' active' : ''), html:
         `${o.label}<span class="opt-cc">${span}</span>` });
       btn.addEventListener('click', () => {
         optRow.querySelectorAll('.opt').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+        btn.classList.add('active'); include(o.min);
       });
       optRow.appendChild(btn);
     });
     row.appendChild(optRow);
   } else if (c.type === 'switch') {
     const sw = el('div', { class: 'switch-row' });
-    [['Off', 0], ['On', 127]].forEach(([label, val], i) => {
-      const btn = el('div', { class: 'opt' + (i === 0 ? ' active' : ''), html:
+    [['Off', 0], ['On', 127]].forEach(([label, val]) => {
+      const active = included && (val === 0 ? dispVal < 1 : dispVal >= 1);
+      const btn = el('div', { class: 'opt' + (active ? ' active' : ''), html:
         `${label}<span class="opt-cc">${val === 0 ? '0' : '1–127'}</span>` });
       btn.addEventListener('click', () => {
         sw.querySelectorAll('.opt').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+        btn.classList.add('active'); include(val);
       });
       sw.appendChild(btn);
     });
     row.appendChild(sw);
   } else if (c.type === 'momentary') {
+    // a command, not a stored setting — never added to the cheat sheet
     row.appendChild(el('div', { class: 'switch-row' }, [
       el('div', { class: 'opt active', html: 'Command<span class="opt-cc">any value</span>' }),
     ]));
   }
+
+  row.appendChild(status);
+  renderStatus();
   return row;
 }
 
@@ -702,11 +741,11 @@ function fallbackCopy(text, done) {
 }
 
 function renderCheatsheet() {
-  const sheet = loadSheet();
+  const sheet = selections;
   const wrap = el('section', { class: 'view active' });
   wrap.appendChild(el('h2', { class: 'section-title', text: 'CC cheat sheet' }));
   wrap.appendChild(el('p', { class: 'lead',
-    text: 'Your live reference. Pick controls below and this page compiles every Ch · CC = value to enter on the Quad Cortex. Selections are saved on this device; channels follow each pedal’s setting.' }));
+    text: 'Your live reference. Anything you adjust on the Pedals tab shows up here automatically — and you can also tick controls below. It compiles every Ch · CC = value to enter on the Quad Cortex. Saved on this device; channels follow each pedal’s setting.' }));
 
   const summaryHost = el('div', { id: 'cheat-summary' });
   const editorHost = el('div', { id: 'cheat-editor' });
@@ -731,4 +770,4 @@ function renderCheatsheet() {
 
 /* --------------------------------------------------------------- boot ---- */
 window.addEventListener('hashchange', handleHash);
-document.addEventListener('DOMContentLoaded', handleHash);
+document.addEventListener('DOMContentLoaded', () => { selections = loadSheet(); handleHash(); });
