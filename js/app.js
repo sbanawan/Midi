@@ -53,6 +53,7 @@ function setActiveTab(name) {
 
 const ROUTES = {
   pedals: renderPedals,
+  recipes: renderRecipes,
   qc: renderQC,
   clock: renderClock,
   sources: renderSources,
@@ -63,7 +64,9 @@ function navigate(route, arg) {
 }
 function handleHash() {
   const raw = location.hash.replace(/^#/, '') || 'pedals';
-  const [route, arg] = raw.split('/');
+  const idx = raw.indexOf('/');
+  const route = idx < 0 ? raw : raw.slice(0, idx);
+  const arg = idx < 0 ? undefined : raw.slice(idx + 1);
   const fn = ROUTES[route] || renderPedals;
   setActiveTab(route in ROUTES ? route : 'pedals');
   app().innerHTML = '';
@@ -329,6 +332,282 @@ function renderSources() {
   wrap.appendChild(card);
   wrap.appendChild(el('p', { class: 'note',
     text: 'Reference-only app: it shows the settings to dial in. The CC/value data is structured so live Web MIDI sending can be added later without changing the content.' }));
+  return wrap;
+}
+
+/* ============================================================ RECIPES ==== */
+/* A recipe is a named, saved setup: favourite settings for "various effects",
+ * spanning one or more pedals, plus an optional tempo. Stored in localStorage.
+ *   { id, name, bpm, notes, entries: { pedalId: { cc: value, ... } } }     */
+
+const RECIPES_KEY = 'recipes.v1';
+
+function loadRecipes() {
+  try { return JSON.parse(localStorage.getItem(RECIPES_KEY)) || []; }
+  catch (e) { return []; }
+}
+function saveRecipes(list) {
+  try { localStorage.setItem(RECIPES_KEY, JSON.stringify(list)); } catch (e) { /* ignore */ }
+}
+function getRecipe(id) { return loadRecipes().find(r => r.id === id); }
+function upsertRecipe(rec) {
+  const list = loadRecipes();
+  const i = list.findIndex(r => r.id === rec.id);
+  if (i >= 0) list[i] = rec; else list.push(rec);
+  saveRecipes(list);
+}
+function deleteRecipe(id) { saveRecipes(loadRecipes().filter(r => r.id !== id)); }
+const newId = () => 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+// Only settings (not momentary commands) belong in a recipe.
+const settingControls = p => p.controls.filter(c => c.type !== 'momentary');
+
+function labelForValue(c, v) {
+  if (c.options) {
+    const o = c.options.find(o => v >= o.min && v <= o.max);
+    return o ? o.label : String(v);
+  }
+  if (c.type === 'switch') return v >= 1 ? 'On' : 'Off';
+  if (c.type === 'knob') return `${v} (${ccPct(v)}%)`;
+  return String(v);
+}
+function defaultValueFor(c) {
+  if (c.type === 'knob') return 64;
+  if (c.type === 'switch') return 0;
+  if (c.options) return c.options[0].min;
+  return 0;
+}
+
+/* ---- recipes: dispatch ------------------------------------------------- */
+function renderRecipes(arg) {
+  const parts = (arg || '').split('/').filter(Boolean);
+  if (parts[0] === 'new') return renderRecipeEditor(null);
+  if (parts[0] === 'edit' && parts[1]) return renderRecipeEditor(parts[1]);
+  if (parts[0] === 'view' && parts[1]) return renderRecipeView(parts[1]);
+  return renderRecipeList();
+}
+
+/* ---- recipes: list ----------------------------------------------------- */
+function renderRecipeList() {
+  const wrap = el('section', { class: 'view active' });
+  const headRow = el('div', { class: 'detail-head' });
+  headRow.appendChild(el('h2', { class: 'section-title', text: 'Recipes' }));
+  headRow.appendChild(el('button', { class: 'primary-btn', text: '+ New recipe',
+    onclick: () => navigate('recipes', 'new') }));
+  wrap.appendChild(headRow);
+  wrap.appendChild(el('p', { class: 'lead',
+    text: 'Saved settings for the effects you like. A recipe captures knob/switch values across any of the pedals (plus an optional tempo) so you can recall exactly what to dial in.' }));
+
+  const list = loadRecipes();
+  if (!list.length) {
+    wrap.appendChild(el('div', { class: 'card', html:
+      '<p style="margin:0;color:var(--text-dim)">No recipes yet. Tap <b>+ New recipe</b> to capture your first one — e.g. "Ambient wash", "Slapback + shimmer", "Lo-fi tape".</p>' }));
+    return wrap;
+  }
+  const grid = el('div', { class: 'pedal-grid' });
+  list.forEach(r => {
+    const involved = Object.keys(r.entries || {}).filter(pid => Object.keys(r.entries[pid]).length);
+    const card = el('div', { class: 'pedal-card', onclick: () => navigate('recipes', 'view/' + r.id) });
+    card.style.borderLeftColor = involved.length ? (pedalById(involved[0]).accent) : 'var(--accent)';
+    card.appendChild(el('h3', { text: r.name || 'Untitled recipe' }));
+    const meta = el('div', { class: 'meta' });
+    if (r.bpm) meta.appendChild(el('span', { class: 'chip ch', text: r.bpm + ' BPM' }));
+    involved.forEach(pid => meta.appendChild(el('span', { class: 'chip', text: pedalById(pid).name })));
+    if (!involved.length) meta.appendChild(el('span', { class: 'chip', text: 'no settings yet' }));
+    card.appendChild(meta);
+    grid.appendChild(card);
+  });
+  wrap.appendChild(grid);
+  return wrap;
+}
+
+/* ---- recipes: editor --------------------------------------------------- */
+function renderRecipeEditor(id) {
+  const existing = id ? getRecipe(id) : null;
+  // working draft (deep-ish copy)
+  const draft = existing
+    ? { id: existing.id, name: existing.name, bpm: existing.bpm || '', notes: existing.notes || '',
+        entries: JSON.parse(JSON.stringify(existing.entries || {})) }
+    : { id: newId(), name: '', bpm: '', notes: '', entries: {} };
+
+  const wrap = el('section', { class: 'view active' });
+  wrap.appendChild(el('button', { class: 'back-btn', text: '← Recipes', onclick: () => navigate('recipes') }));
+  wrap.appendChild(el('h2', { class: 'section-title', text: existing ? 'Edit recipe' : 'New recipe' }));
+
+  // top fields
+  const fields = el('div', { class: 'card' });
+  const nameIn = el('input', { class: 'text-input', type: 'text', placeholder: 'Recipe name (e.g. Ambient wash)', value: draft.name });
+  nameIn.addEventListener('input', () => { draft.name = nameIn.value; });
+  const bpmIn = el('input', { class: 'text-input small', type: 'number', min: 20, max: 400, placeholder: 'BPM (optional)', value: draft.bpm });
+  bpmIn.addEventListener('input', () => { draft.bpm = bpmIn.value; });
+  const notesIn = el('textarea', { class: 'text-input', rows: 2, placeholder: 'Notes (optional)' });
+  notesIn.value = draft.notes;
+  notesIn.addEventListener('input', () => { draft.notes = notesIn.value; });
+  fields.appendChild(el('label', { class: 'field-label', text: 'Name' }));
+  fields.appendChild(nameIn);
+  fields.appendChild(el('label', { class: 'field-label', text: 'Tempo' }));
+  fields.appendChild(bpmIn);
+  fields.appendChild(el('label', { class: 'field-label', text: 'Notes' }));
+  fields.appendChild(notesIn);
+  wrap.appendChild(fields);
+
+  wrap.appendChild(el('p', { class: 'note',
+    text: 'Tick the controls you want this recipe to set, then choose their values. Only ticked controls are saved.' }));
+
+  // per-pedal editors
+  PEDALS.forEach(p => wrap.appendChild(recipePedalEditor(p, draft)));
+
+  // actions
+  const actions = el('div', { class: 'action-row' });
+  actions.appendChild(el('button', { class: 'primary-btn', text: existing ? 'Save changes' : 'Save recipe',
+    onclick: () => {
+      if (!draft.name.trim()) draft.name = 'Untitled recipe';
+      // prune empty pedal maps
+      Object.keys(draft.entries).forEach(pid => { if (!Object.keys(draft.entries[pid]).length) delete draft.entries[pid]; });
+      upsertRecipe(draft);
+      navigate('recipes', 'view/' + draft.id);
+    } }));
+  actions.appendChild(el('button', { class: 'ghost-btn', text: 'Cancel', onclick: () => navigate('recipes') }));
+  if (existing) actions.appendChild(el('button', { class: 'danger-btn', text: 'Delete',
+    onclick: () => { if (confirm('Delete this recipe?')) { deleteRecipe(existing.id); navigate('recipes'); } } }));
+  wrap.appendChild(actions);
+  return wrap;
+}
+
+function recipePedalEditor(p, draft) {
+  const entry = draft.entries[p.id] || (draft.entries[p.id] = {});
+  const card = el('div', { class: 'card' });
+  const h = el('h3', {}, [p.name]);
+  h.appendChild(el('span', { class: 'control-cc', html: ` &nbsp;Ch <b>${channels[p.id]}</b>` }));
+  card.appendChild(h);
+
+  settingControls(p).forEach(c => {
+    const included = Object.prototype.hasOwnProperty.call(entry, c.cc);
+    const row = el('div', { class: 'control recipe-row' + (included ? '' : ' off') });
+
+    const top = el('div', { class: 'control-top' });
+    const left = el('label', { class: 'include' });
+    const cb = el('input', { type: 'checkbox' });
+    cb.checked = included;
+    left.appendChild(cb);
+    left.appendChild(el('span', { class: 'control-name', text: c.name }));
+    top.appendChild(left);
+    top.appendChild(el('span', { class: 'control-cc', html: `CC <b>${c.cc}</b>` }));
+    row.appendChild(top);
+    if (c.usage) row.appendChild(el('div', { class: 'control-usage', text: c.usage }));
+
+    const editorHost = el('div', { class: 'editor-host' });
+    row.appendChild(editorHost);
+
+    const buildEditor = () => {
+      editorHost.innerHTML = '';
+      editorHost.appendChild(recipeValueEditor(c, entry[c.cc], v => { entry[c.cc] = v; }));
+    };
+    cb.addEventListener('change', () => {
+      if (cb.checked) { entry[c.cc] = defaultValueFor(c); row.classList.remove('off'); buildEditor(); }
+      else { delete entry[c.cc]; row.classList.add('off'); editorHost.innerHTML = ''; }
+    });
+    if (included) buildEditor();
+    card.appendChild(row);
+  });
+  return card;
+}
+
+function recipeValueEditor(c, value, onChange) {
+  if (c.type === 'knob') {
+    const knob = el('div', { class: 'knob-row' });
+    const input = el('input', { type: 'range', min: 0, max: 127, value: value });
+    const readout = el('div', { class: 'knob-readout', html:
+      `<span class="ccval">${value}</span> <span class="pct">(${ccPct(value)}%)</span>` });
+    input.addEventListener('input', () => {
+      const v = parseInt(input.value, 10);
+      readout.innerHTML = `<span class="ccval">${v}</span> <span class="pct">(${ccPct(v)}%)</span>`;
+      onChange(v);
+    });
+    knob.appendChild(input); knob.appendChild(readout);
+    return knob;
+  }
+  if (c.type === 'select' || c.type === 'toggle') {
+    const optRow = el('div', { class: 'opt-row' });
+    c.options.forEach(o => {
+      const active = value >= o.min && value <= o.max;
+      const span = o.min === o.max ? `${o.min}` : `${o.min}–${o.max}`;
+      const btn = el('div', { class: 'opt' + (active ? ' active' : ''), html: `${o.label}<span class="opt-cc">${span}</span>` });
+      btn.addEventListener('click', () => {
+        optRow.querySelectorAll('.opt').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active'); onChange(o.min);
+      });
+      optRow.appendChild(btn);
+    });
+    return optRow;
+  }
+  // switch
+  const sw = el('div', { class: 'switch-row' });
+  [['Off', 0], ['On', 127]].forEach(([label, val]) => {
+    const btn = el('div', { class: 'opt' + ((val === 0 ? value < 1 : value >= 1) ? ' active' : ''), html:
+      `${label}<span class="opt-cc">${val === 0 ? '0' : '1–127'}</span>` });
+    btn.addEventListener('click', () => {
+      sw.querySelectorAll('.opt').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active'); onChange(val);
+    });
+    sw.appendChild(btn);
+  });
+  return sw;
+}
+
+/* ---- recipes: view ----------------------------------------------------- */
+function renderRecipeView(id) {
+  const r = getRecipe(id);
+  const wrap = el('section', { class: 'view active' });
+  wrap.appendChild(el('button', { class: 'back-btn', text: '← Recipes', onclick: () => navigate('recipes') }));
+  if (!r) { wrap.appendChild(el('p', { text: 'Recipe not found.' })); return wrap; }
+
+  const head = el('div', { class: 'detail-head' });
+  head.appendChild(el('div', {}, [
+    el('h2', { text: r.name || 'Untitled recipe' }),
+    r.bpm ? el('div', { class: 'brand', text: r.bpm + ' BPM' }) : null,
+  ]));
+  const btns = el('div', { class: 'action-row tight' });
+  btns.appendChild(el('button', { class: 'ghost-btn', text: 'Edit', onclick: () => navigate('recipes', 'edit/' + r.id) }));
+  btns.appendChild(el('button', { class: 'danger-btn', text: 'Delete',
+    onclick: () => { if (confirm('Delete this recipe?')) { deleteRecipe(r.id); navigate('recipes'); } } }));
+  head.appendChild(btns);
+  wrap.appendChild(head);
+
+  if (r.notes) wrap.appendChild(el('div', { class: 'note', text: r.notes }));
+  if (r.bpm) wrap.appendChild(el('div', { class: 'note',
+    text: `Set the Quad Cortex tempo to ${r.bpm} BPM and enable MIDI Clock Out so clock-synced effects follow it (see the Clock sync tab).` }));
+
+  const involved = PEDALS.filter(p => r.entries[p.id] && Object.keys(r.entries[p.id]).length);
+  if (!involved.length) {
+    wrap.appendChild(el('div', { class: 'card', html: '<p style="margin:0;color:var(--text-dim)">This recipe has no settings yet.</p>' }));
+    return wrap;
+  }
+
+  involved.forEach(p => {
+    const card = el('div', { class: 'card' });
+    card.style.borderLeft = `4px solid ${p.accent}`;
+    const h = el('h3', {}, [p.name]);
+    h.appendChild(el('span', { class: 'control-cc', html: ` &nbsp;Ch <b>${channels[p.id]}</b>` }));
+    card.appendChild(h);
+    const tw = el('div', { class: 'table-wrap' });
+    const t = el('table');
+    t.appendChild(el('thead', {}, el('tr', {}, [
+      el('th', { text: 'Control' }), el('th', { text: 'Setting' }), el('th', { text: 'Send from QC' }),
+    ])));
+    const tb = el('tbody');
+    settingControls(p).forEach(c => {
+      if (!Object.prototype.hasOwnProperty.call(r.entries[p.id], c.cc)) return;
+      const v = r.entries[p.id][c.cc];
+      tb.appendChild(el('tr', {}, [
+        el('td', { text: c.name }),
+        el('td', { text: labelForValue(c, v) }),
+        el('td', { class: 'mono', html: `Ch ${channels[p.id]} · CC ${c.cc} = <b>${v}</b>` }),
+      ]));
+    });
+    t.appendChild(tb); tw.appendChild(t); card.appendChild(tw);
+    wrap.appendChild(card);
+  });
   return wrap;
 }
 

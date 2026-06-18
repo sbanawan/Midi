@@ -202,6 +202,40 @@ ul.src-list li:last-child { border-bottom: none; }
   color: var(--warn); border-radius: var(--radius); padding: 12px 14px; font-size: 0.85rem; margin-bottom: 18px;
 }
 
+/* ---- buttons / inputs (recipes) ------------------------------------- */
+.primary-btn {
+  background: var(--accent); color: #08131f; border: none; font-weight: 650;
+  border-radius: 999px; padding: 9px 16px; font-size: 0.9rem; cursor: pointer; white-space: nowrap;
+}
+.ghost-btn {
+  background: var(--bg-elev); color: var(--text); border: 1px solid var(--line);
+  border-radius: 999px; padding: 9px 16px; font-size: 0.9rem; cursor: pointer;
+}
+.danger-btn {
+  background: none; color: #e06c6c; border: 1px solid rgba(224,108,108,0.5);
+  border-radius: 999px; padding: 9px 16px; font-size: 0.9rem; cursor: pointer;
+}
+.action-row { display: flex; gap: 10px; margin: 20px 0 8px; flex-wrap: wrap; }
+.action-row.tight { margin: 0; }
+
+.field-label { display: block; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.8px;
+  color: var(--text-dim); margin: 12px 0 5px; }
+.field-label:first-child { margin-top: 0; }
+.text-input {
+  width: 100%; background: var(--bg-elev-2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 9px; padding: 10px 12px; font-size: 1rem; font-family: inherit;
+}
+.text-input.small { width: auto; min-width: 140px; }
+.text-input:focus { outline: none; border-color: var(--accent); }
+
+.recipe-row .include { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.recipe-row .include input { width: 18px; height: 18px; accent-color: var(--accent); }
+.recipe-row.off { opacity: 0.55; }
+.recipe-row.off .control-name { color: var(--text-dim); }
+.editor-host:empty { display: none; }
+td.mono { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-dim); }
+td.mono b { color: var(--text); }
+
 @media (max-width: 520px) {
   .kv { grid-template-columns: 1fr; }
   .kv dd { margin-top: 2px; }

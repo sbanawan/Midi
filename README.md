@@ -32,6 +32,11 @@ Or just open `index.html` in a browser. Hostable as-is on GitHub Pages.
   `Ch N · CC X` plus an interactive slider / option picker so you can read off
   the value to send. Each pedal's MIDI channel is configurable (saved in your
   browser) with duplicate-channel warnings.
+- **Recipes** — save your favourite settings for "various effects". A recipe
+  captures knob/switch values across any of the pedals (plus an optional tempo
+  and notes); the read-only view lists exactly what to dial in per pedal and the
+  `Ch N · CC X = value` to send from the QC. Stored in your browser
+  (localStorage).
 - **Quad Cortex** — the channel map, how to add MIDI Out messages to a preset,
   and the QC's MIDI device settings.
 - **Clock sync** — step-by-step MIDI clock setup with the QC as master, plus
