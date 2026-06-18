@@ -160,6 +160,11 @@ p.lead { color: var(--text-dim); margin: 0 0 18px; max-width: 70ch; }
 .clear-link:hover { color: var(--text); }
 .chip.sheet { color: var(--accent); border-color: rgba(74,144,217,0.4); }
 
+.live-toggle { display: flex; align-items: center; gap: 9px; margin: 14px 0 4px; font-size: 0.9rem; cursor: pointer; }
+.live-toggle input { width: 18px; height: 18px; accent-color: var(--accent); flex: 0 0 auto; }
+.primary-btn.disabled { opacity: 0.45; pointer-events: none; }
+.warn { color: var(--warn); }
+
 .knob-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
 .knob-row input[type=range] { flex: 1; accent-color: var(--accent); }
 .knob-readout {

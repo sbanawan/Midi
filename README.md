@@ -44,6 +44,11 @@ Or just open `index.html` in a browser. Hostable as-is on GitHub Pages.
   and the QC's MIDI device settings.
 - **Clock sync** — step-by-step MIDI clock setup with the QC as master, plus
   what each pedal needs to follow clock.
+- **MIDI out** — optional live sending via the Web MIDI API (Chrome/Edge on
+  desktop/Android; not Safari/iOS). Connect, pick an output port (defaults to
+  the Quad Cortex), and either turn on **Live send** (each control change is
+  pushed immediately as a CC) or hit **Send all**. Routing is the user's
+  choice; the page documents the QC‑over‑USB setup.
 - **Sources** — links to the official documentation every value came from.
 
 ## Channels

@@ -31,12 +31,70 @@ function channelConflicts() {
 let selections; // initialised at boot (after loadSheet is available)
 function saveSelections() { saveSheet(selections); }
 function selVal(pid, cc) { const e = selections.entries[pid]; return e ? e[cc] : undefined; }
-function selSet(pid, cc, v) { (selections.entries[pid] || (selections.entries[pid] = {}))[cc] = v; saveSelections(); }
+function selSet(pid, cc, v) {
+  (selections.entries[pid] || (selections.entries[pid] = {}))[cc] = v;
+  saveSelections();
+  if (MIDI.live) MIDI.sendCC(channels[pid], cc, v);
+}
 function selClear(pid, cc) {
   const e = selections.entries[pid];
   if (e) { delete e[cc]; if (!Object.keys(e).length) delete selections.entries[pid]; saveSelections(); }
 }
 function selCount(pid) { const e = selections.entries[pid]; return e ? Object.keys(e).length : 0; }
+function selectionTotal() { return PEDALS.reduce((n, p) => n + selCount(p.id), 0); }
+
+/* -------------------------------------------------------- Web MIDI out ----
+ * Sends the selections as MIDI CC to a chosen output port. Routing is the
+ * user's choice (e.g. the Quad Cortex over USB, or a direct USB-MIDI
+ * interface to the pedals) — the code just sends to whichever port is picked.
+ * Requires Chrome/Edge (desktop or Android). Safari/iOS has no Web MIDI. */
+const MIDI = {
+  supported: typeof navigator !== 'undefined' && typeof navigator.requestMIDIAccess === 'function',
+  access: null,
+  output: null,
+  notify: null,                         // single render callback (set by the MIDI view)
+  PORT_KEY: 'midiPort.v1',
+  LIVE_KEY: 'midiLiveSend.v1',
+  emit() { if (typeof this.notify === 'function') this.notify(); },
+  async connect() {
+    if (!this.supported) throw new Error('Web MIDI not supported in this browser');
+    this.access = await navigator.requestMIDIAccess({ sysex: false });
+    this.access.onstatechange = () => { this.autopick(); this.emit(); };
+    this.autopick();
+    this.emit();
+  },
+  outputs() { return this.access ? Array.from(this.access.outputs.values()) : []; },
+  autopick() {
+    const saved = (() => { try { return localStorage.getItem(this.PORT_KEY); } catch (e) { return null; } })();
+    const outs = this.outputs();
+    this.output = outs.find(o => o.id === saved)
+      || outs.find(o => /cortex|quad/i.test(o.name || ''))
+      || outs[0] || null;
+  },
+  selectPort(id) {
+    const o = this.outputs().find(o => o.id === id) || null;
+    this.output = o;
+    if (o) { try { localStorage.setItem(this.PORT_KEY, o.id); } catch (e) { /* ignore */ } }
+    this.emit();
+  },
+  get live() { try { return localStorage.getItem(this.LIVE_KEY) === '1'; } catch (e) { return false; } },
+  set live(v) { try { localStorage.setItem(this.LIVE_KEY, v ? '1' : '0'); } catch (e) { /* ignore */ } this.emit(); },
+  sendCC(channel, cc, value) {
+    if (!this.output) return false;
+    const status = 0xB0 | ((channel - 1) & 0x0F);   // Control Change on (channel-1)
+    this.output.send([status, cc & 0x7F, Math.max(0, Math.min(127, value)) & 0x7F]);
+    return true;
+  },
+  sendSelections(sel) {
+    let n = 0;
+    PEDALS.forEach(p => {
+      const e = sel.entries[p.id];
+      if (!e) return;
+      Object.keys(e).forEach(cc => { if (this.sendCC(channels[p.id], parseInt(cc, 10), e[cc])) n++; });
+    });
+    return n;
+  },
+};
 
 /* ------------------------------------------------------------ helpers ---- */
 const el = (tag, props = {}, kids = []) => {
@@ -71,6 +129,7 @@ const ROUTES = {
   recipes: renderRecipes,
   qc: renderQC,
   clock: renderClock,
+  midi: renderMidi,
   sources: renderSources,
 };
 
@@ -701,9 +760,20 @@ function buildCheatSummary(sheet, refresh) {
     else fallbackCopy(txt, done);
   });
   bar.appendChild(copyBtn);
+  if (MIDI.access && MIDI.output) {
+    const sendBtn = el('button', { class: 'ghost-btn', text: `Send (${count})` });
+    sendBtn.addEventListener('click', () => {
+      const n = MIDI.sendSelections(sheet);
+      sendBtn.textContent = `Sent ${n} ✓`;
+      setTimeout(() => { sendBtn.textContent = `Send (${count})`; }, 1500);
+    });
+    bar.appendChild(sendBtn);
+  }
   bar.appendChild(el('button', { class: 'danger-btn', text: 'Clear all',
     onclick: () => { if (confirm('Clear all cheat-sheet selections?')) { sheet.entries = {}; saveSheet(sheet); if (refresh) refresh(true); } } }));
   host.appendChild(bar);
+  if (MIDI.access && MIDI.output && MIDI.live)
+    host.appendChild(el('div', { class: 'note', html: `Live send is on → <b>${MIDI.output.name}</b>. Changes are sent as you make them.` }));
 
   involved.forEach(p => {
     const card = el('div', { class: 'card' });
@@ -765,6 +835,106 @@ function renderCheatsheet() {
   wrap.appendChild(el('h2', { class: 'section-title', text: 'Make your selections', style: 'margin-top:26px' }));
   PEDALS.forEach(p => editorHost.appendChild(recipePedalEditor(p, sheet, refresh)));
   wrap.appendChild(editorHost);
+  return wrap;
+}
+
+/* ------------------------------------------------------------ MIDI view -- */
+function renderMidi() {
+  const wrap = el('section', { class: 'view active' });
+  wrap.appendChild(el('h2', { class: 'section-title', text: 'MIDI out — live send' }));
+  wrap.appendChild(el('p', { class: 'lead',
+    text: 'Send the settings you choose straight to your rig. Your routing: computer → Quad Cortex (USB) → QC MIDI Out → pedals. Pick the Quad Cortex as the output port below.' }));
+
+  if (!MIDI.supported) {
+    wrap.appendChild(el('div', { class: 'banner',
+      text: 'This browser can’t send MIDI (no Web MIDI API). Use Chrome or Edge on a computer or Android. On iPhone/Safari, use this app as a reference and send from a laptop.' }));
+  }
+
+  const card = el('div', { class: 'card' });
+  const statusLine = el('div', { class: 'note' });
+  const portWrap = el('div', { class: 'channel-box' });
+  const liveWrap = el('label', { class: 'live-toggle' });
+  const actions = el('div', { class: 'action-row' });
+  card.appendChild(statusLine);
+  card.appendChild(portWrap);
+  card.appendChild(liveWrap);
+  card.appendChild(actions);
+  wrap.appendChild(card);
+
+  const refresh = () => {
+    // status
+    statusLine.innerHTML = '';
+    if (!MIDI.access) statusLine.appendChild(el('span', { text: MIDI.supported ? 'Not connected yet.' : 'Web MIDI unavailable in this browser.' }));
+    else if (!MIDI.output) statusLine.appendChild(el('span', { class: 'warn', text: 'Connected, but no MIDI output found — plug in the Quad Cortex (USB) and enable MIDI Over USB.' }));
+    else statusLine.appendChild(el('span', { html: `<b>Connected →</b> ${MIDI.output.name}` }));
+
+    // port picker
+    portWrap.style.display = MIDI.access ? 'flex' : 'none';
+    portWrap.innerHTML = '';
+    if (MIDI.access) {
+      portWrap.appendChild(el('label', { text: 'Output port:' }));
+      const sel = el('select');
+      const outs = MIDI.outputs();
+      if (!outs.length) sel.appendChild(el('option', { text: '(no outputs detected)' }));
+      outs.forEach(o => {
+        const opt = el('option', { value: o.id, text: o.name });
+        if (MIDI.output && o.id === MIDI.output.id) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener('change', () => MIDI.selectPort(sel.value));
+      portWrap.appendChild(sel);
+    }
+
+    // live toggle
+    liveWrap.style.display = MIDI.access ? 'flex' : 'none';
+    liveWrap.innerHTML = '';
+    const cb = el('input', { type: 'checkbox' });
+    cb.checked = MIDI.live;
+    cb.addEventListener('change', () => { MIDI.live = cb.checked; });
+    liveWrap.appendChild(cb);
+    liveWrap.appendChild(el('span', { text: 'Live send — push each control change as I make it (on the Pedals tab or here)' }));
+
+    // actions
+    actions.innerHTML = '';
+    if (!MIDI.access) {
+      const b = el('button', { class: 'primary-btn' + (MIDI.supported ? '' : ' disabled'), text: 'Connect MIDI' });
+      b.addEventListener('click', () => {
+        MIDI.connect().catch(e => {
+          statusLine.innerHTML = '';
+          statusLine.appendChild(el('span', { class: 'warn', text: 'Could not start MIDI: ' + e.message }));
+        });
+      });
+      actions.appendChild(b);
+    } else {
+      const total = selectionTotal();
+      const sendBtn = el('button', { class: 'primary-btn' + (MIDI.output && total ? '' : ' disabled'), text: `Send all selections (${total})` });
+      sendBtn.addEventListener('click', () => {
+        const n = MIDI.sendSelections(selections);
+        sendBtn.textContent = `Sent ${n} ✓`;
+        setTimeout(() => { sendBtn.textContent = `Send all selections (${selectionTotal()})`; }, 1500);
+      });
+      actions.appendChild(sendBtn);
+    }
+  };
+  MIDI.notify = refresh;
+  refresh();
+
+  // QC-through setup
+  const steps = el('div', { class: 'card' });
+  steps.appendChild(el('h3', { text: 'Setup: routing through the Quad Cortex (USB)' }));
+  const ol = el('ol', { class: 'steps' });
+  [
+    'Connect the Quad Cortex to this computer with USB-C.',
+    'On the QC: Settings → MIDI → enable “MIDI Over USB”.',
+    'Enable “MIDI Thru” so MIDI arriving over USB is forwarded to the QC’s MIDI Out (TRS). Note: MIDI Thru disables the QC’s own preset MIDI-out.',
+    'Wire the QC MIDI Out (TRS) to your pedals — Chroma Console’s DIN in, and each Chase Bliss pedal via its MIDIBox.',
+    'Here: click Connect MIDI, choose the Quad Cortex as the output port, then turn on Live send (or use “Send all”).',
+  ].forEach(s => ol.appendChild(el('li', { text: s })));
+  steps.appendChild(ol);
+  steps.appendChild(el('div', { class: 'note warn',
+    text: 'Reality check: this relies on the QC forwarding USB MIDI to its TRS MIDI Out. If your pedals don’t respond, the QC may only pass its physical MIDI In to MIDI Out — in that case use a direct USB-MIDI interface to the pedals (the port picker above works the same way).' }));
+  wrap.appendChild(steps);
+
   return wrap;
 }
 
